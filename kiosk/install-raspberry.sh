@@ -45,6 +45,6 @@ echo
 echo "Listo. Pasos siguientes:"
 echo " 1) sudo raspi-config -> System Options -> Boot / Auto Login -> Desktop Autologin"
 echo " 2) Abre UNA vez con internet para que se guarde en caché:  $HOME/.local/bin/dms-kiosk.sh"
-echo " 3) Con teclado: Ctrl+Alt+... no hay barra; para configurar Telegram sal con Alt+F4 y abre:"
+echo " 3) Para configurar Telegram: conecta un teclado, sal del kiosco con Alt+F4 y abre:"
 echo "    $BROWSER --user-data-dir=$HOME/.config/dms-profile ${URL%%\?*}"
 echo " 4) Reinicia: sudo reboot"

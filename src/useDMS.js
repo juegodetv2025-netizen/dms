@@ -75,6 +75,7 @@ export function useDMS({ videoRef, canvasRef, settings }) {
   const audioRef = useRef(null)
   const runningRef = useRef(false)
   const wakeRef = useRef(null)
+  const visRef = useRef(null)
 
   const snapshot = useCallback((label) => {
     const v = videoRef.current
@@ -160,6 +161,8 @@ export function useDMS({ videoRef, canvasRef, settings }) {
     cancelAnimationFrame(rafRef.current)
     streamRef.current?.getTracks().forEach((t) => t.stop())
     streamRef.current = null
+    if (visRef.current) document.removeEventListener('visibilitychange', visRef.current)
+    visRef.current = null
     wakeRef.current?.release?.().catch(() => {})
     wakeRef.current = null
     if (geoRef.current.id != null) navigator.geolocation?.clearWatch(geoRef.current.id)
@@ -196,7 +199,9 @@ export function useDMS({ videoRef, canvasRef, settings }) {
           if (runningRef.current) wakeRef.current = await navigator.wakeLock?.request('screen')
         } catch {}
       }
-      document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && lock())
+      if (visRef.current) document.removeEventListener('visibilitychange', visRef.current)
+      visRef.current = () => document.visibilityState === 'visible' && lock()
+      document.addEventListener('visibilitychange', visRef.current)
       runLoop()
       lock()
       setStatus('running')
