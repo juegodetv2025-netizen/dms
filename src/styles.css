@@ -55,3 +55,4 @@ aside{display:flex;flex-direction:column;gap:14px}
 .ev em{font-style:normal;font-size:12px}.ev em.sent{color:#4ade80}.ev em.error{color:#f87171}.ev em.sending{color:#fbbf24}.ev em.off{color:var(--mut)}
 .pill.live{background:#3b0d12;border-color:#ef4444;color:#fecaca}
 .cfg label.consent{grid-column:1/-1;background:#0a1120;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.cfg select{background:#0a1120;border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--tx)}

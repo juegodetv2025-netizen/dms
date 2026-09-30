@@ -109,7 +109,13 @@ export function useFleet({ fleet, pin, vehicles, ice, sound }) {
       if (!vid) return call.close()
       call.answer() // el coordinador solo recibe; no envía video ni audio
       callsRef.current[vid] = call
-      call.on('stream', (s) => setStreams((x) => ({ ...x, [vid]: s })))
+      call.on('stream', (s) => {
+        setStreams((x) => ({ ...x, [vid]: s }))
+        // Buffer de reproducción pequeño = menos retraso (Chrome/Edge)
+        call.peerConnection?.getReceivers().forEach((r) => {
+          if ('jitterBufferTarget' in r) r.jitterBufferTarget = 150
+        })
+      })
       call.on('close', () => dropStream(vid))
     })
     peer.on('disconnected', () => !dead && peer.reconnect())
@@ -139,6 +145,7 @@ export function useFleet({ fleet, pin, vehicles, ice, sound }) {
   }, [fleet, pin, key, ice])
 
   const watch = useCallback((vid, audio = true) => connsRef.current[vid]?.open && connsRef.current[vid].send({ t: 'watch', audio }), [])
+  const setQuality = useCallback((vid, level) => connsRef.current[vid]?.open && connsRef.current[vid].send({ t: 'quality', level }), [])
   const stopWatch = useCallback((vid) => {
     connsRef.current[vid]?.open && connsRef.current[vid].send({ t: 'stop' })
     callsRef.current[vid]?.close()
@@ -149,5 +156,5 @@ export function useFleet({ fleet, pin, vehicles, ice, sound }) {
     })
   }, [])
 
-  return { peerState, data, streams, feed, watch, stopWatch }
+  return { peerState, data, streams, feed, watch, stopWatch, setQuality }
 }

@@ -14,6 +14,7 @@ const DEFAULTS = {
   vehicleId: '',
   pin: '',
   ice: '',
+  perf: 'balanceado',
   driver: 'Conductor 1',
   vehicle: 'Vehículo 01',
   sound: true,
@@ -245,6 +246,14 @@ export default function App() {
               <label>
                 Pausa entre correos: {s.cooldownSec}s
                 <input type="range" min="5" max="120" step="5" value={s.cooldownSec} onChange={(e) => set('cooldownSec', +e.target.value)} />
+              </label>
+              <label>
+                Rendimiento del análisis
+                <select value={s.perf} onChange={(e) => set('perf', e.target.value)}>
+                  <option value="alto">Alto (más preciso, más CPU)</option>
+                  <option value="balanceado">Balanceado (recomendado)</option>
+                  <option value="ahorro">Ahorro (equipos lentos)</option>
+                </select>
               </label>
               <label className="chk consent">
                 <input type="checkbox" checked={s.liveEnabled} onChange={(e) => set('liveEnabled', e.target.checked)} />

@@ -2,6 +2,25 @@ import { useEffect, useState } from 'react'
 import Peer from 'peerjs'
 import { parseIce, peerIdFor } from './ice.js'
 
+// Perfiles de calidad del video en vivo (el coordinador elige; 'media' por defecto)
+const QUALITY = {
+  alta: { maxBitrate: 1800000, scaleResolutionDownBy: 1, maxFramerate: 30 },
+  media: { maxBitrate: 900000, scaleResolutionDownBy: 1.5, maxFramerate: 24 },
+  baja: { maxBitrate: 300000, scaleResolutionDownBy: 2.5, maxFramerate: 15 },
+}
+
+function applyQuality(call, level) {
+  const q = QUALITY[level] || QUALITY.media
+  call?.peerConnection?.getSenders().forEach(async (se) => {
+    if (se.track?.kind !== 'video') return
+    try {
+      const p = se.getParameters()
+      p.encodings = [{ ...(p.encodings?.[0] || {}), ...q }]
+      await se.setParameters(p)
+    } catch {}
+  })
+}
+
 // Vehículo: se registra como peer, autentica coordinadores por PIN y, cuando uno lo pide,
 // les envía video de cabina + audio (WebRTC, cifrado extremo a extremo, sin pasar por un servidor).
 // telRef.current() debe devolver la telemetría actual del vehículo.
@@ -22,6 +41,7 @@ export function useLiveBroadcast({ settings: s, running, streamRef, telRef }) {
     let mic = null
     const conns = new Set()
     const calls = new Map() // id del coordinador -> llamada
+    const levels = new Map() // id del coordinador -> calidad elegida
     const id = peerIdFor(s.fleet, s.vehicleId)
 
     const stopMicIfIdle = () => {
@@ -75,6 +95,7 @@ export function useLiveBroadcast({ settings: s, running, streamRef, telRef }) {
       stopCall(pid)
       const vt = streamRef.current?.getVideoTracks()[0]
       if (!vt || !peer) return
+      vt.contentHint = 'motion' // prioriza fluidez (fps) sobre nitidez
       const ms = new MediaStream([vt])
       if (wantAudio) (await getMic())?.getAudioTracks().forEach((t) => ms.addTrack(t))
       if (dead) return
@@ -89,17 +110,8 @@ export function useLiveBroadcast({ settings: s, running, streamRef, telRef }) {
         }
       })
       call.on('error', () => stopCall(pid))
-      // Limita el ancho de banda para 4G
-      setTimeout(() => {
-        call.peerConnection?.getSenders().forEach(async (se) => {
-          if (se.track?.kind !== 'video') return
-          try {
-            const p = se.getParameters()
-            p.encodings = [{ ...(p.encodings?.[0] || {}), maxBitrate: 600000, scaleResolutionDownBy: 1.5 }]
-            await se.setParameters(p)
-          } catch {}
-        })
-      }, 1500)
+      // Aplica calidad tras negociar (se repite porque el navegador puede reiniciar los parámetros)
+      ;[1200, 4000].forEach((ms) => setTimeout(() => applyQuality(call, levels.get(pid)), ms))
     }
 
     const create = () => {
@@ -126,6 +138,10 @@ export function useLiveBroadcast({ settings: s, running, streamRef, telRef }) {
           }
           if (m?.t === 'watch') startCall(conn.peer, m.audio !== false)
           else if (m?.t === 'stop') stopCall(conn.peer)
+          else if (m?.t === 'quality') {
+            levels.set(conn.peer, m.level)
+            applyQuality(calls.get(conn.peer), m.level)
+          }
         })
         conn.on('close', () => {
           conns.delete(conn)

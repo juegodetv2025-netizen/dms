@@ -29,3 +29,6 @@
 .fe{align-items:flex-start}.fe>i{width:4px;align-self:stretch;border-radius:4px}
 .fe span{display:flex;gap:12px;font-size:12px}
 .lnk{background:none;padding:0;color:#60a5fa;font-size:12px}
+.qsel{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.qsel button{border-radius:0;background:#111a2e;font-size:12px;padding:7px 11px;text-transform:capitalize;color:var(--mut)}
+.qsel button.on{background:#2563eb;color:#fff}

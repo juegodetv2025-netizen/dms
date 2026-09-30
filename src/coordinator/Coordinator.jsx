@@ -61,8 +61,9 @@ function Meter({ stream, active }) {
   )
 }
 
-function LivePanel({ vid, tel, stream, onStop }) {
+function LivePanel({ vid, tel, stream, onStop, onQuality }) {
   const v = useRef(null)
+  const [q, setQ] = useState('media')
   const [muted, setMuted] = useState(false)
   useEffect(() => {
     if (v.current && stream) {
@@ -101,6 +102,11 @@ function LivePanel({ vid, tel, stream, onStop }) {
           <small>{tel?.driver}</small>
         </div>
         <div className="live-ctl">
+          <div className="qsel">
+            {['baja', 'media', 'alta'].map((l) => (
+              <button key={l} className={q === l ? 'on' : ''} onClick={() => { setQ(l); onQuality(l) }}>{l}</button>
+            ))}
+          </div>
           {hasAudio ? <Meter stream={stream} /> : <small>{stream ? 'Sin audio' : ''}</small>}
           <button className="ghost" onClick={() => setMuted((m) => !m)}>{muted ? '🔇 Activar audio' : '🔊 Silenciar'}</button>
           <button className="ghost" onClick={snap}>📸 Captura</button>
@@ -219,7 +225,7 @@ export default function Coordinator() {
         <section>
           <AnimatePresence>
             {open.map((vid) => (
-              <LivePanel key={vid} vid={vid} tel={data[vid]?.tel} stream={streams[vid]} onStop={() => stop(vid)} />
+              <LivePanel key={vid} vid={vid} tel={data[vid]?.tel} stream={streams[vid]} onStop={() => stop(vid)} onQuality={(l) => fleet.setQuality(vid, l)} />
             ))}
           </AnimatePresence>
           {vehicles.length === 0 && <p className="empty big">Agrega los IDs de tus vehículos en Ajustes para empezar.</p>}

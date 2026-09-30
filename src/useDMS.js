@@ -176,7 +176,7 @@ export function useDMS({ videoRef, canvasRef, settings }) {
       audioRef.current ||= new (window.AudioContext || window.webkitAudioContext)()
       audioRef.current.resume?.()
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 }, facingMode: 'user' },
         audio: false,
       })
       streamRef.current = stream
@@ -223,6 +223,7 @@ export function useDMS({ videoRef, canvasRef, settings }) {
     let frame = 0
     let lastT = -1
     let lastUi = 0
+    let lastInfer = 0
     let lastHist = 0
     let lastBeep = 0
     let fpsCount = 0
@@ -237,6 +238,10 @@ export function useDMS({ videoRef, canvasRef, settings }) {
       lastT = v.currentTime
       const now = performance.now()
       const S = settingsRef.current
+      // Perfil de rendimiento: limita la inferencia para dejar CPU libre al video en vivo
+      const perf = S.perf || 'balanceado'
+      if (now - lastInfer < { alto: 0, balanceado: 45, ahorro: 90 }[perf]) return
+      lastInfer = now
       if (cv.width !== v.videoWidth) {
         cv.width = v.videoWidth
         cv.height = v.videoHeight
@@ -245,7 +250,7 @@ export function useDMS({ videoRef, canvasRef, settings }) {
       const H = cv.height
 
       const fr = faceLm.detectForVideo(v, now)
-      if (frame++ % 3 === 0) {
+      if (frame++ % { alto: 3, balanceado: 5, ahorro: 8 }[perf] === 0) {
         const or = objDet.detectForVideo(v, now)
         phones = or.detections.filter((d) => d.categories[0].score > 0.35)
       }
