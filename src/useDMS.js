@@ -230,7 +230,7 @@ export function useDMS({ videoRef, canvasRef, settings }) {
     runningRef.current = true
 
     const since = { drowsy: 0, distraction: 0, tilt: 0, phone: 0, noface: 0 }
-    const lastFired = { drowsy: 0, distraction: 0, tilt: 0, phone: 0, noface: 0 }
+    const lastFired = { drowsy: -Infinity, distraction: -Infinity, tilt: -Infinity, phone: -Infinity, noface: -Infinity }
     const win = [] // ventana PERCLOS
     let awareness = 100
     let phones = []
