@@ -1,6 +1,8 @@
 // Notificaciones a coordinadores: Telegram (foto + texto) y/o webhook propio (correo).
 // Si no hay conexión, las alertas quedan en cola (localStorage) y se reenvían solas.
 
+import { addData } from './dataUsage.js'
+
 const QKEY = 'dms-queue'
 
 const loadQ = () => {
@@ -45,12 +47,27 @@ const caption = (a) =>
   ].join('\n')
 
 async function sendTelegram(s, a) {
+  const base = `https://api.telegram.org/bot${s.telegramToken}`
+  if (!a.image) {
+    // Aviso solo de texto (p. ej. límite de datos)
+    const text = a.text || caption(a)
+    const r = await fetch(`${base}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: s.telegramChatId, text }),
+    })
+    if (!r.ok) throw new Error(`Telegram ${r.status}`)
+    addData('alerts', text.length + 800)
+    return
+  }
+  const photo = dataUrlToBlob(a.image)
   const fd = new FormData()
   fd.append('chat_id', s.telegramChatId)
   fd.append('caption', caption(a))
-  fd.append('photo', dataUrlToBlob(a.image), 'evento.jpg')
-  const r = await fetch(`https://api.telegram.org/bot${s.telegramToken}/sendPhoto`, { method: 'POST', body: fd })
+  fd.append('photo', photo, 'evento.jpg')
+  const r = await fetch(`${base}/sendPhoto`, { method: 'POST', body: fd })
   if (!r.ok) throw new Error(`Telegram ${r.status}`)
+  addData('alerts', photo.size + 1500)
 }
 
 async function sendWebhook(s, a) {

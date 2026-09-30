@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import Peer from 'peerjs'
 import { parseIce, peerIdFor } from './ice.js'
+import { addData } from './dataUsage.js'
 
 // Perfiles de calidad del video en vivo (el coordinador elige; 'media' por defecto)
 const QUALITY = {
@@ -166,6 +167,26 @@ export function useLiveBroadcast({ settings: s, running, streamRef, telRef }) {
     }
     create()
 
+    // Cuenta datos móviles reales (enviados + recibidos) de cada conexión WebRTC
+    const last = new WeakMap()
+    const poll = async () => {
+      const pcs = [...calls.values(), ...conns].map((c) => c.peerConnection).filter(Boolean)
+      for (const pc of pcs) {
+        try {
+          const rep = await pc.getStats()
+          rep.forEach((r) => {
+            if (r.type !== 'candidate-pair' || !r.nominated || r.state !== 'succeeded') return
+            const b = (r.bytesSent || 0) + (r.bytesReceived || 0)
+            const p = last.get(pc)
+            const delta = p && p.id === r.id ? b - p.bytes : b
+            last.set(pc, { id: r.id, bytes: b })
+            addData('live', delta)
+          })
+        } catch {}
+      }
+    }
+    const statsIv = setInterval(poll, 3000)
+
     const iv = setInterval(() => {
       const msg = { t: 'tel', ...telRef.current(), ts: Date.now(), viewers: calls.size }
       conns.forEach((c) => c.open && c.send(msg))
@@ -174,6 +195,7 @@ export function useLiveBroadcast({ settings: s, running, streamRef, telRef }) {
     return () => {
       dead = true
       clearInterval(iv)
+      clearInterval(statsIv)
       calls.forEach((c) => {
         try {
           c.close()

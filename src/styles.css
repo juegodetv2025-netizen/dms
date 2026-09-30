@@ -56,3 +56,7 @@ aside{display:flex;flex-direction:column;gap:14px}
 .pill.live{background:#3b0d12;border-color:#ef4444;color:#fecaca}
 .cfg label.consent{grid-column:1/-1;background:#0a1120;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
 .cfg select{background:#0a1120;border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--tx)}
+.data h3{font-size:14px;margin-bottom:10px;display:flex;justify-content:space-between;text-transform:capitalize}.data h3 span{color:var(--mut)}
+.dbar{height:8px;background:#1a2438;border-radius:9px;overflow:hidden;margin-bottom:10px}.dbar div{height:100%;border-radius:9px}
+.drow{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-top:4px}.drow b{font-size:24px}.drow small{color:var(--mut);font-size:12px}
+.lnk{background:none;padding:0;color:#60a5fa;font-size:12px}

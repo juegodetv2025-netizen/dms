@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ALERTS } from '../alerts.js'
 import { useFleet } from './useFleet.js'
+import { fmtBytes } from '../format.js'
 
 const DEFAULTS = { fleet: '', pin: '', vehicles: '', ice: '', sound: true }
 const scoreColor = (v) => (v > 70 ? '#22c55e' : v > 40 ? '#f59e0b' : '#ef4444')
@@ -138,6 +139,22 @@ function Card({ vid, d, watching, onWatch }) {
             <div className="aw-n" style={{ color: scoreColor(t.awareness) }}>{t.awareness}<small>%</small></div>
             <div className="aw-bar"><motion.div animate={{ width: `${t.awareness}%`, background: scoreColor(t.awareness) }} /></div>
           </div>
+          {t.data && (
+            <div className="dat">
+              <div className="dbar">
+                <motion.div
+                  animate={{
+                    width: `${t.data.limit ? Math.min(100, (t.data.used / t.data.limit) * 100) : 0}%`,
+                    background: t.data.level === 'limit' ? '#ef4444' : t.data.level === 'warn' ? '#f59e0b' : '#22c55e',
+                  }}
+                />
+              </div>
+              <small>
+                Datos: {fmtBytes(t.data.used)}
+                {t.data.limit ? ` / ${fmtBytes(t.data.limit)}` : ''}
+              </small>
+            </div>
+          )}
           <div className="vc-tags">
             <AnimatePresence>
               {(t.active || []).map((a) => (
@@ -246,9 +263,10 @@ export default function Coordinator() {
                     <i style={{ background: ALERTS[f.type].color }} />
                     <div>
                       <b style={{ color: ALERTS[f.type].color }}>{ALERTS[f.type].label}</b>
+                      {f.detail && <small>{f.detail}</small>}
                       <small>{f.vehicle || f.vid} · {f.driver} · {new Date(f.ts).toLocaleTimeString()}</small>
                       <span>
-                        <button className="lnk" onClick={() => watch(f.vid)}>🎥 Ver cabina</button>
+                        {f.type !== 'data' && <button className="lnk" onClick={() => watch(f.vid)}>🎥 Ver cabina</button>}
                         {f.pos && <a href={`https://maps.google.com/?q=${f.pos.lat},${f.pos.lon}`} target="_blank" rel="noreferrer">📍 Mapa</a>}
                       </span>
                     </div>

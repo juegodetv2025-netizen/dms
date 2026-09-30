@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useDMS, ALERTS } from './useDMS.js'
 import { notifyReady, telegramReady } from './notify.js'
 import { useLiveBroadcast } from './useLiveBroadcast.js'
+import { useDataUsage } from './dataUsage.js'
+import { fmtBytes } from './format.js'
 
 const DEFAULTS = {
   to: '',
@@ -15,6 +17,8 @@ const DEFAULTS = {
   pin: '',
   ice: '',
   perf: 'balanceado',
+  dataLimitGB: 0,
+  dataWarnPct: 80,
   driver: 'Conductor 1',
   vehicle: 'Vehículo 01',
   sound: true,
@@ -126,6 +130,9 @@ export default function App() {
   const dms = useDMS({ videoRef, canvasRef, settings: s })
   const { status, error, metrics: m, flags, active, history, events, queued, online } = dms
   const ready = notifyReady(s)
+  const metaRef = useRef(() => ({}))
+  metaRef.current = () => ({ vehicle: s.vehicle, driver: s.driver, awareness: m.awareness })
+  const usage = useDataUsage(s, metaRef)
 
   // Telemetría que ve el coordinador (se lee cada segundo)
   const telRef = useRef(() => ({}))
@@ -138,6 +145,7 @@ export default function App() {
       active,
       flags,
       pos: p ? { lat: p.latitude, lon: p.longitude, speed: p.speed } : null,
+      data: { used: usage.used, limit: usage.limit, level: usage.level },
     }
   }
   const { viewers, liveState } = useLiveBroadcast({ settings: s, running: status === 'running', streamRef: dms.streamRef, telRef })
@@ -255,6 +263,14 @@ export default function App() {
                   <option value="ahorro">Ahorro (equipos lentos)</option>
                 </select>
               </label>
+              <label>
+                Límite mensual de datos: {s.dataLimitGB > 0 ? `${s.dataLimitGB} GB` : 'sin límite'}
+                <input type="number" min="0" step="0.5" value={s.dataLimitGB} onChange={(e) => set('dataLimitGB', Math.max(0, +e.target.value))} />
+              </label>
+              <label>
+                Avisar a coordinación al llegar a: {s.dataWarnPct}%
+                <input type="range" min="50" max="95" step="5" value={s.dataWarnPct} onChange={(e) => set('dataWarnPct', +e.target.value)} />
+              </label>
               <label className="chk consent">
                 <input type="checkbox" checked={s.liveEnabled} onChange={(e) => set('liveEnabled', e.target.checked)} />
                 Permitir que coordinación vea y escuche la cabina (el conductor fue informado y consintió)
@@ -349,6 +365,29 @@ export default function App() {
             <Stat label="PERCLOS 30s" value={Math.round(m.perclos * 100)} unit="%" bad={m.perclos > 0.25} />
             <Stat label="Giro (yaw)" value={Math.round(m.yaw)} unit="°" bad={flags.away} />
             <Stat label="Inclinación" value={Math.round(m.pitch)} unit="°" bad={flags.away} />
+          </div>
+          <div className="card data">
+            <h3>
+              Consumo de datos <span>{new Date().toLocaleString('es', { month: 'long' })}</span>
+            </h3>
+            <div className="dbar">
+              <motion.div
+                animate={{
+                  width: `${usage.limit ? Math.min(100, usage.pct) : 0}%`,
+                  background: usage.level === 'limit' ? '#ef4444' : usage.level === 'warn' ? '#f59e0b' : '#22c55e',
+                }}
+              />
+            </div>
+            <div className="drow">
+              <b>{fmtBytes(usage.used)}</b>
+              <small>{usage.limit ? `de ${s.dataLimitGB} GB · ${Math.round(usage.pct)}%` : 'sin límite configurado'}</small>
+            </div>
+            <div className="drow">
+              <small>Video en vivo {fmtBytes(usage.live)} · Alertas {fmtBytes(usage.alerts)}</small>
+              <button className="lnk" onClick={() => window.confirm('¿Reiniciar el contador de datos?') && usage.reset()}>
+                Reiniciar
+              </button>
+            </div>
           </div>
           <div className="card log">
             <h3>

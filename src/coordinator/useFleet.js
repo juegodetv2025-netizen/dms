@@ -28,6 +28,7 @@ export function useFleet({ fleet, pin, vehicles, ice, sound }) {
   const connsRef = useRef({})
   const callsRef = useRef({})
   const prevAlerts = useRef({})
+  const prevData = useRef({})
   const soundRef = useRef(sound)
   soundRef.current = sound
   const key = vehicles.join('|')
@@ -66,13 +67,20 @@ export function useFleet({ fleet, pin, vehicles, ice, sound }) {
       const prev = prevAlerts.current[vid] || []
       const fresh = cur.filter((a) => !prev.includes(a))
       prevAlerts.current[vid] = cur
-      if (!fresh.length) return
-      setFeed((f) =>
-        [
-          ...fresh.map((a) => ({ id: crypto.randomUUID(), vid, type: a, driver: m.driver, vehicle: m.vehicle, ts: Date.now(), pos: m.pos })),
-          ...f,
-        ].slice(0, 50)
-      )
+      const base = { vid, driver: m.driver, vehicle: m.vehicle, ts: Date.now(), pos: m.pos }
+      const items = fresh.map((a) => ({ id: crypto.randomUUID(), type: a, ...base }))
+      // Aviso de consumo de datos móviles (al cambiar de nivel)
+      const dl = m.data?.level || 'ok'
+      if (dl !== 'ok' && dl !== (prevData.current[vid] || 'ok'))
+        items.push({
+          id: crypto.randomUUID(),
+          type: 'data',
+          detail: dl === 'limit' ? 'Superó el límite mensual de datos' : 'Cerca del límite mensual de datos',
+          ...base,
+        })
+      prevData.current[vid] = dl
+      if (!items.length) return
+      setFeed((f) => [...items, ...f].slice(0, 50))
       if (soundRef.current) beepAlert()
     }
 

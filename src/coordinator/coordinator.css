@@ -32,3 +32,5 @@
 .qsel{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .qsel button{border-radius:0;background:#111a2e;font-size:12px;padding:7px 11px;text-transform:capitalize;color:var(--mut)}
 .qsel button.on{background:#2563eb;color:#fff}
+.dat{display:flex;flex-direction:column;gap:4px}.dat small{color:var(--mut);font-size:12px}
+.vcard .dbar{height:6px;background:#1a2438;border-radius:9px;overflow:hidden;margin:0}.vcard .dbar div{height:100%;border-radius:9px}
