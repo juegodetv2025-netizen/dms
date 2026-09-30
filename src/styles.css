@@ -60,3 +60,7 @@ aside{display:flex;flex-direction:column;gap:14px}
 .dbar{height:8px;background:#1a2438;border-radius:9px;overflow:hidden;margin-bottom:10px}.dbar div{height:100%;border-radius:9px}
 .drow{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-top:4px}.drow b{font-size:24px}.drow small{color:var(--mut);font-size:12px}
 .lnk{background:none;padding:0;color:#60a5fa;font-size:12px}
+
+.copilot{margin-top:10px;padding:10px 12px;border-radius:12px;background:#0f1a2e;border:1px solid #1e293b;font-size:.85rem;color:#cbd5e1;line-height:1.35}
+.copilot p{margin:4px 0 0}
+.copilot span{display:block;color:#7dd3fc;font-size:.78rem}

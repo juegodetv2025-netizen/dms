@@ -42,24 +42,33 @@ async function createModels() {
   }
 }
 
+// Sirena fuerte de dos tonos (alterna 880/1320 Hz). El volumen final depende del volumen del equipo.
 function beep(ctx) {
-  const o = ctx.createOscillator()
-  const g = ctx.createGain()
-  o.type = 'square'
-  o.frequency.value = 880
-  g.gain.setValueAtTime(0.0001, ctx.currentTime)
-  g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.02)
-  g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4)
-  o.connect(g).connect(ctx.destination)
-  o.start()
-  o.stop(ctx.currentTime + 0.45)
+  const t0 = ctx.currentTime
+  const master = ctx.createGain()
+  master.gain.value = 1
+  const comp = ctx.createDynamicsCompressor() // sube el volumen percibido sin distorsionar
+  master.connect(comp).connect(ctx.destination)
+  ;[880, 1320, 880, 1320].forEach((f, k) => {
+    const o = ctx.createOscillator()
+    const g = ctx.createGain()
+    o.type = 'square'
+    o.frequency.value = f
+    const a = t0 + k * 0.2
+    g.gain.setValueAtTime(0.0001, a)
+    g.gain.exponentialRampToValueAtTime(0.9, a + 0.02)
+    g.gain.exponentialRampToValueAtTime(0.0001, a + 0.19)
+    o.connect(g).connect(master)
+    o.start(a)
+    o.stop(a + 0.2)
+  })
 }
 
 export function useDMS({ videoRef, canvasRef, settings }) {
   const [status, setStatus] = useState('idle') // idle | loading | running | error
   const [error, setError] = useState('')
-  const [metrics, setMetrics] = useState({ awareness: 100, blink: 0, yaw: 0, pitch: 0, perclos: 0, fps: 0 })
-  const [flags, setFlags] = useState({ eyesClosed: false, away: false, phone: false, noface: false })
+  const [metrics, setMetrics] = useState({ awareness: 100, blink: 0, yaw: 0, pitch: 0, roll: 0, perclos: 0, fps: 0 })
+  const [flags, setFlags] = useState({ eyesClosed: false, away: false, tilt: false, phone: false, noface: false })
   const [active, setActive] = useState([])
   const [history, setHistory] = useState(() => Array(60).fill(100))
   const [events, setEvents] = useState([])
@@ -70,8 +79,8 @@ export function useDMS({ videoRef, canvasRef, settings }) {
   const rafRef = useRef(0)
   const streamRef = useRef(null)
   const geoRef = useRef({ id: null, pos: null })
-  const calRef = useRef({ yaw: 0, pitch: 0 })
-  const lastPoseRef = useRef({ yaw: 0, pitch: 0 })
+  const calRef = useRef({ yaw: 0, pitch: 0, roll: 0 })
+  const lastPoseRef = useRef({ yaw: 0, pitch: 0, roll: 0 })
   const audioRef = useRef(null)
   const runningRef = useRef(false)
   const wakeRef = useRef(null)
@@ -220,8 +229,8 @@ export function useDMS({ videoRef, canvasRef, settings }) {
     const ctx = cv.getContext('2d')
     runningRef.current = true
 
-    const since = { drowsy: 0, distraction: 0, phone: 0, noface: 0 }
-    const lastFired = { drowsy: 0, distraction: 0, phone: 0, noface: 0 }
+    const since = { drowsy: 0, distraction: 0, tilt: 0, phone: 0, noface: 0 }
+    const lastFired = { drowsy: 0, distraction: 0, tilt: 0, phone: 0, noface: 0 }
     const win = [] // ventana PERCLOS
     let awareness = 100
     let phones = []
@@ -265,9 +274,11 @@ export function useDMS({ videoRef, canvasRef, settings }) {
       let blink = 0
       let yaw = 0
       let pitch = 0
+      let roll = 0
       let lookDown = 0
       let eyesClosed = false
       let away = false
+      let tilt = false
       if (hasFace) {
         const bs = {}
         fr.faceBlendshapes[0].categories.forEach((c) => (bs[c.categoryName] = c.score))
@@ -277,10 +288,13 @@ export function useDMS({ videoRef, canvasRef, settings }) {
         lastPoseRef.current = {
           yaw: deg(Math.atan2(d[8], d[10])),
           pitch: deg(Math.asin(clamp(-d[9], -1, 1))),
+          roll: deg(Math.atan2(d[1], d[5])), // inclinación lateral de la cabeza
         }
         yaw = lastPoseRef.current.yaw - calRef.current.yaw
         pitch = lastPoseRef.current.pitch - calRef.current.pitch
+        roll = lastPoseRef.current.roll - calRef.current.roll
         eyesClosed = blink > 0.55
+        tilt = Math.abs(roll) > (S.tiltDeg || 20)
         away = Math.abs(yaw) > S.yawDeg || Math.abs(pitch) > S.yawDeg * 0.8 || lookDown > 0.65
         lastFace = { lm: fr.faceLandmarks[0], d }
       } else lastFace = null
@@ -291,8 +305,8 @@ export function useDMS({ videoRef, canvasRef, settings }) {
       while (win.length && now - win[0].t > 30000) win.shift()
       const perclos = win.length ? win.filter((w) => w.c).length / win.length : 0
 
-      const cond = { drowsy: eyesClosed, distraction: away && !eyesClosed, phone, noface }
-      const hold = { drowsy: S.drowsySec, distraction: S.distractionSec, phone: 1.2, noface: 4 }
+      const cond = { drowsy: eyesClosed, distraction: away && !eyesClosed, tilt: tilt && !eyesClosed, phone, noface }
+      const hold = { drowsy: S.drowsySec, distraction: S.distractionSec, tilt: S.tiltSec || 2, phone: 1.2, noface: 4 }
       const act = []
       for (const k of Object.keys(cond)) {
         if (cond[k]) {
@@ -309,21 +323,21 @@ export function useDMS({ videoRef, canvasRef, settings }) {
 
       // atención suavizada
       const target = clamp(
-        100 - (eyesClosed ? 45 : 0) - (away ? 30 : 0) - (phone ? 55 : 0) - (noface ? 60 : 0) - perclos * 60,
+        100 - (eyesClosed ? 45 : 0) - (away ? 30 : 0) - (tilt ? 25 : 0) - (phone ? 55 : 0) - (noface ? 60 : 0) - perclos * 60,
         0,
         100
       )
       awareness += (target - awareness) * 0.06
 
       // sonido
-      if (act.length && S.sound && now - lastBeep > 1800) {
+      if (act.length && S.sound && now - lastBeep > 1300) {
         lastBeep = now
         beep(audioRef.current)
       }
 
       // ---- dibujo ----
       ctx.clearRect(0, 0, W, H)
-      const state = act.length ? 'bad' : cond.drowsy || cond.distraction || cond.phone ? 'warn' : 'ok'
+      const state = act.length ? 'bad' : cond.drowsy || cond.distraction || cond.tilt || cond.phone ? 'warn' : 'ok'
       const col = state === 'bad' ? '#ef4444' : state === 'warn' ? '#f59e0b' : '#22c55e'
       if (lastFace) {
         const { lm, d } = lastFace
@@ -405,8 +419,8 @@ export function useDMS({ videoRef, canvasRef, settings }) {
       }
       if (now - lastUi > 100) {
         lastUi = now
-        setMetrics({ awareness, blink, yaw, pitch, perclos, fps })
-        setFlags({ eyesClosed, away, phone, noface })
+        setMetrics({ awareness, blink, yaw, pitch, roll, perclos, fps })
+        setFlags({ eyesClosed, away, tilt, phone, noface })
         setActive((prev) => (prev.join() === act.join() ? prev : act))
       }
       if (now - lastHist > 500) {
@@ -421,7 +435,7 @@ export function useDMS({ videoRef, canvasRef, settings }) {
   fireEventRef.current = fireEvent
 
   const calibrate = useCallback(() => {
-    calRef.current = { ...lastPoseRef.current }
+    calRef.current = { yaw: 0, pitch: 0, roll: 0, ...lastPoseRef.current }
   }, [])
 
   const testAlert = useCallback(() => fireEvent('phone', metrics.awareness), [fireEvent, metrics.awareness])

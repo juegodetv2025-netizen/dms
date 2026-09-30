@@ -5,6 +5,7 @@ import { notifyReady, telegramReady } from './notify.js'
 import { useLiveBroadcast } from './useLiveBroadcast.js'
 import { useDataUsage } from './dataUsage.js'
 import { fmtBytes } from './format.js'
+import { useCopilot } from './useCopilot.js'
 
 const DEFAULTS = {
   to: '',
@@ -25,6 +26,10 @@ const DEFAULTS = {
   drowsySec: 1.5,
   distractionSec: 2.5,
   yawDeg: 25,
+  tiltDeg: 20,
+  tiltSec: 2,
+  copilot: true,
+  copilotTalk: false,
   cooldownSec: 30,
 }
 
@@ -130,6 +135,7 @@ export default function App() {
   const dms = useDMS({ videoRef, canvasRef, settings: s })
   const { status, error, metrics: m, flags, active, history, events, queued, online } = dms
   const ready = notifyReady(s)
+  const copilot = useCopilot({ settings: s, running: status === 'running', active, metrics: m })
   const metaRef = useRef(() => ({}))
   metaRef.current = () => ({ vehicle: s.vehicle, driver: s.driver, awareness: m.awareness })
   const usage = useDataUsage(s, metaRef)
@@ -252,6 +258,11 @@ export default function App() {
                 <input type="range" min="10" max="50" step="1" value={s.yawDeg} onChange={(e) => set('yawDeg', +e.target.value)} />
               </label>
               <label>
+                Cabeza inclinada: {s.tiltDeg}° durante {s.tiltSec}s
+                <input type="range" min="10" max="40" step="1" value={s.tiltDeg} onChange={(e) => set('tiltDeg', +e.target.value)} />
+                <input type="range" min="1" max="5" step="0.5" value={s.tiltSec} onChange={(e) => set('tiltSec', +e.target.value)} />
+              </label>
+              <label>
                 Pausa entre correos: {s.cooldownSec}s
                 <input type="range" min="5" max="120" step="5" value={s.cooldownSec} onChange={(e) => set('cooldownSec', +e.target.value)} />
               </label>
@@ -294,6 +305,20 @@ export default function App() {
               <label className="chk">
                 <input type="checkbox" checked={s.sound} onChange={(e) => set('sound', e.target.checked)} /> Alarma sonora
               </label>
+              <label className="chk">
+                <input type="checkbox" checked={s.copilot} onChange={(e) => set('copilot', e.target.checked)} /> Voz de Lucía en las alertas
+              </label>
+              <label className="chk">
+                <input
+                  type="checkbox"
+                  checked={s.copilotTalk}
+                  disabled={!copilot.supportedListen}
+                  onChange={(e) => set('copilotTalk', e.target.checked)}
+                />
+                Conversar con Lucía por micrófono
+                {!copilot.supportedListen && ' (no disponible en este navegador; usa Chrome en Android)'}
+              </label>
+              <button type="button" onClick={copilot.test}>Probar voz de Lucía</button>
             </div>
           </motion.section>
         )}
@@ -342,9 +367,21 @@ export default function App() {
           <div className="chips">
             <Chip on={flags.eyesClosed} label="Ojos cerrados" color={ALERTS.drowsy.color} />
             <Chip on={flags.away} label="Mirada desviada" color={ALERTS.distraction.color} />
+            <Chip on={flags.tilt} label="Cabeza inclinada" color={ALERTS.tilt.color} />
             <Chip on={flags.phone} label="Celular" color={ALERTS.phone.color} />
             <Chip on={flags.noface} label="Sin rostro" color={ALERTS.noface.color} />
           </div>
+          {(copilot.last || copilot.error || copilot.listening) && (
+            <div className="copilot">
+              {copilot.listening && <span>🎙 Escuchando… di «Lucía» y tu pregunta</span>}
+              {copilot.error && <span>{copilot.error}</span>}
+              {copilot.last && (
+                <p>
+                  <b>{copilot.last.who === 'lucia' ? 'Lucía' : 'Tú'}:</b> {copilot.last.text}
+                </p>
+              )}
+            </div>
+          )}
         </section>
 
         <aside>
