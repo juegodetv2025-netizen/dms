@@ -2,6 +2,7 @@
 // Si no hay conexión, las alertas quedan en cola (localStorage) y se reenvían solas.
 
 import { addData } from './dataUsage.js'
+import { authHeaders } from './license.js'
 
 const QKEY = 'dms-queue'
 
@@ -73,7 +74,7 @@ async function sendTelegram(s, a) {
 async function sendWebhook(s, a) {
   const r = await fetch(s.webhookUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({ ...a, to: s.to }),
   })
   if (!r.ok) throw new Error(`Webhook ${r.status}`)

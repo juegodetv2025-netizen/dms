@@ -15,6 +15,19 @@ export { ALERTS }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
 const deg = (r) => (r * 180) / Math.PI
 
+// Dispositivos que cuentan como "uso de celular" y su confianza mínima (tablets suelen salir como laptop/celular)
+const DEVICE_MIN = { 'cell phone': 0.3, laptop: 0.45, remote: 0.5 }
+const DEVICE_NAME = { 'cell phone': 'Celular', laptop: 'Tablet/laptop', remote: 'Dispositivo' }
+const CAL_KEY = 'dms-cal'
+
+function loadCal() {
+  try {
+    const c = JSON.parse(localStorage.getItem(CAL_KEY) || 'null')
+    if (c && ['yaw', 'pitch', 'roll'].every((k) => Number.isFinite(c[k]))) return { ...c, saved: true }
+  } catch {}
+  return { yaw: 0, pitch: 0, roll: 0, saved: false }
+}
+
 async function createModels() {
   const fileset = await FilesetResolver.forVisionTasks(WASM)
   const make = async (delegate) => {
@@ -22,15 +35,19 @@ async function createModels() {
       baseOptions: { modelAssetPath: FACE_MODEL, delegate },
       runningMode: 'VIDEO',
       numFaces: 1,
+      // Umbrales bajos: con la cámara casi de perfil la cara se detecta con menos confianza
+      minFaceDetectionConfidence: 0.35,
+      minFacePresenceConfidence: 0.35,
+      minTrackingConfidence: 0.35,
       outputFaceBlendshapes: true,
       outputFacialTransformationMatrixes: true,
     })
     const obj = await ObjectDetector.createFromOptions(fileset, {
       baseOptions: { modelAssetPath: OBJ_MODEL, delegate },
       runningMode: 'VIDEO',
-      scoreThreshold: 0.3,
-      categoryAllowlist: ['cell phone'],
-      maxResults: 3,
+      scoreThreshold: 0.25,
+      categoryAllowlist: Object.keys(DEVICE_MIN),
+      maxResults: 6,
     })
     return { face, obj }
   }
@@ -68,7 +85,7 @@ export function useDMS({ videoRef, canvasRef, settings }) {
   const [status, setStatus] = useState('idle') // idle | loading | running | error
   const [error, setError] = useState('')
   const [metrics, setMetrics] = useState({ awareness: 100, blink: 0, yaw: 0, pitch: 0, roll: 0, perclos: 0, fps: 0 })
-  const [flags, setFlags] = useState({ eyesClosed: false, away: false, tilt: false, phone: false, noface: false })
+  const [flags, setFlags] = useState({ eyesClosed: false, away: false, tilt: false, phone: false, noface: false, calibrating: false })
   const [active, setActive] = useState([])
   const [history, setHistory] = useState(() => Array(60).fill(100))
   const [events, setEvents] = useState([])
@@ -79,8 +96,10 @@ export function useDMS({ videoRef, canvasRef, settings }) {
   const rafRef = useRef(0)
   const streamRef = useRef(null)
   const geoRef = useRef({ id: null, pos: null })
-  const calRef = useRef({ yaw: 0, pitch: 0, roll: 0 })
+  const calRef = useRef(loadCal())
   const lastPoseRef = useRef({ yaw: 0, pitch: 0, roll: 0 })
+  const roiRef = useRef(null)
+  const accRef = useRef(null)
   const audioRef = useRef(null)
   const runningRef = useRef(false)
   const wakeRef = useRef(null)
@@ -188,10 +207,16 @@ export function useDMS({ videoRef, canvasRef, settings }) {
       audioRef.current ||= new (window.AudioContext || window.webkitAudioContext)()
       audioRef.current.resume?.()
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 }, facingMode: 'user' },
+        video: { width: { ideal: 1280 }, height: { ideal: 960 }, frameRate: { ideal: 30, max: 30 }, facingMode: 'user' },
         audio: false,
       })
       streamRef.current = stream
+      // Campo de visión lo más ancho posible (si la cámara expone zoom, lo bajamos al mínimo)
+      try {
+        const track = stream.getVideoTracks()[0]
+        const z = track.getCapabilities?.().zoom
+        if (z) await track.applyConstraints({ advanced: [{ zoom: z.min }] })
+      } catch {}
       const v = videoRef.current
       v.srcObject = stream
       await v.play()
@@ -228,6 +253,7 @@ export function useDMS({ videoRef, canvasRef, settings }) {
     const cv = canvasRef.current
     const ctx = cv.getContext('2d')
     runningRef.current = true
+    accRef.current = null
 
     const since = { drowsy: 0, distraction: 0, tilt: 0, phone: 0, noface: 0 }
     const lastFired = { drowsy: -Infinity, distraction: -Infinity, tilt: -Infinity, phone: -Infinity, noface: -Infinity }
@@ -265,8 +291,59 @@ export function useDMS({ videoRef, canvasRef, settings }) {
 
       const fr = faceLm.detectForVideo(v, now)
       if (frame++ % { alto: 3, balanceado: 5, ahorro: 8 }[perf] === 0) {
-        const or = objDet.detectForVideo(v, now)
-        phones = or.detections.filter((d) => d.categories[0].score > 0.35)
+        // Región de búsqueda: cara + manos + regazo + volante. Se recorta y se amplía para ver objetos pequeños.
+        let rx = 0
+        let ry = 0
+        let rw = W
+        let rh = H
+        const f0 = fr.faceLandmarks[0]
+        if (f0) {
+          let x0 = 1, y0 = 1, x1 = 0, y1 = 0
+          for (const p of f0) {
+            if (p.x < x0) x0 = p.x
+            if (p.x > x1) x1 = p.x
+            if (p.y < y0) y0 = p.y
+            if (p.y > y1) y1 = p.y
+          }
+          const fw = (x1 - x0) * W
+          const fh = (y1 - y0) * H
+          const cx = ((x0 + x1) / 2) * W
+          rx = clamp(cx - fw * 3.5, 0, W)
+          const rx2 = clamp(cx + fw * 3.5, 0, W)
+          ry = clamp(y0 * H - fh * 1.2, 0, H)
+          const ry2 = clamp(y1 * H + fh * 4.5, 0, H)
+          rw = rx2 - rx
+          rh = ry2 - ry
+        }
+        const useRoi = rw * rh < W * H * 0.8 && rw > 160 && rh > 160
+        let src = v
+        let sx = 1
+        let sy = 1
+        if (useRoi) {
+          const k = Math.min(1, 640 / rw)
+          const c = (roiRef.current ||= document.createElement('canvas'))
+          c.width = Math.round(rw * k)
+          c.height = Math.round(rh * k)
+          c.getContext('2d').drawImage(v, rx, ry, rw, rh, 0, 0, c.width, c.height)
+          src = c
+          sx = rw / c.width
+          sy = rh / c.height
+        } else {
+          rx = 0
+          ry = 0
+        }
+        const or = objDet.detectForVideo(src, now)
+        phones = or.detections
+          .filter((d) => d.categories[0].score >= (DEVICE_MIN[d.categories[0].categoryName] ?? 0.5))
+          .map((d) => ({
+            ...d,
+            boundingBox: {
+              originX: rx + d.boundingBox.originX * sx,
+              originY: ry + d.boundingBox.originY * sy,
+              width: d.boundingBox.width * sx,
+              height: d.boundingBox.height * sy,
+            },
+          }))
       }
 
       // ---- métricas ----
@@ -279,6 +356,9 @@ export function useDMS({ videoRef, canvasRef, settings }) {
       let eyesClosed = false
       let away = false
       let tilt = false
+      const side = !!S.sideCam
+      // Sin calibración guardada el sistema se calibra solo con ~3 s de rostro mirando al frente
+      const calibrating = side && !calRef.current.saved
       if (hasFace) {
         const bs = {}
         fr.faceBlendshapes[0].categories.forEach((c) => (bs[c.categoryName] = c.score))
@@ -293,9 +373,26 @@ export function useDMS({ videoRef, canvasRef, settings }) {
         yaw = lastPoseRef.current.yaw - calRef.current.yaw
         pitch = lastPoseRef.current.pitch - calRef.current.pitch
         roll = lastPoseRef.current.roll - calRef.current.roll
+        if (calibrating) {
+          const a = (accRef.current ||= { t0: now, n: 0, yaw: 0, pitch: 0, roll: 0 })
+          a.n++
+          a.yaw += lastPoseRef.current.yaw
+          a.pitch += lastPoseRef.current.pitch
+          a.roll += lastPoseRef.current.roll
+          if (now - a.t0 > 3000 && a.n >= 10) {
+            calRef.current = { yaw: a.yaw / a.n, pitch: a.pitch / a.n, roll: a.roll / a.n, saved: true }
+            accRef.current = null
+            try {
+              localStorage.setItem(CAL_KEY, JSON.stringify(calRef.current))
+            } catch {}
+          }
+        }
         eyesClosed = blink > 0.55
-        tilt = Math.abs(roll) > (S.tiltDeg || 20)
-        away = Math.abs(yaw) > S.yawDeg || Math.abs(pitch) > S.yawDeg * 0.8 || lookDown > 0.65
+        // De perfil la inclinación y la mirada hacia abajo se miden con menos precisión: umbrales más holgados
+        tilt = !calibrating && Math.abs(roll) > (S.tiltDeg || 20) * (side ? 1.5 : 1)
+        away =
+          !calibrating &&
+          (Math.abs(yaw) > S.yawDeg || Math.abs(pitch) > Math.min(S.yawDeg * 0.8, 35) || lookDown > (side ? 0.8 : 0.65))
         lastFace = { lm: fr.faceLandmarks[0], d }
       } else lastFace = null
       const phone = phones.length > 0
@@ -305,8 +402,8 @@ export function useDMS({ videoRef, canvasRef, settings }) {
       while (win.length && now - win[0].t > 30000) win.shift()
       const perclos = win.length ? win.filter((w) => w.c).length / win.length : 0
 
-      const cond = { drowsy: eyesClosed, distraction: away && !eyesClosed, tilt: tilt && !eyesClosed, phone, noface }
-      const hold = { drowsy: S.drowsySec, distraction: S.distractionSec, tilt: S.tiltSec || 2, phone: 1.2, noface: 4 }
+      const cond = { drowsy: eyesClosed, distraction: away && !eyesClosed, tilt: tilt && !eyesClosed, phone, noface: noface && !calibrating }
+      const hold = { drowsy: S.drowsySec, distraction: S.distractionSec, tilt: S.tiltSec || 2, phone: 1.2, noface: side ? 8 : 4 }
       const act = []
       for (const k of Object.keys(cond)) {
         if (cond[k]) {
@@ -404,10 +501,10 @@ export function useDMS({ videoRef, canvasRef, settings }) {
         ctx.strokeRect(b.originX, b.originY, b.width, b.height)
         ctx.shadowBlur = 0
         ctx.fillStyle = '#d946ef'
-        ctx.fillRect(b.originX, b.originY - 26, 150, 26)
+        ctx.fillRect(b.originX, b.originY - 26, 190, 26)
         ctx.fillStyle = '#fff'
         ctx.font = 'bold 16px sans-serif'
-        ctx.fillText(`Celular ${Math.round(p.categories[0].score * 100)}%`, b.originX + 8, b.originY - 8)
+        ctx.fillText(`${DEVICE_NAME[p.categories[0].categoryName] || 'Dispositivo'} ${Math.round(p.categories[0].score * 100)}%`, b.originX + 8, b.originY - 8)
       }
 
       // ---- UI (throttle) ----
@@ -420,7 +517,7 @@ export function useDMS({ videoRef, canvasRef, settings }) {
       if (now - lastUi > 100) {
         lastUi = now
         setMetrics({ awareness, blink, yaw, pitch, roll, perclos, fps })
-        setFlags({ eyesClosed, away, tilt, phone, noface })
+        setFlags({ eyesClosed, away, tilt, phone, noface, calibrating })
         setActive((prev) => (prev.join() === act.join() ? prev : act))
       }
       if (now - lastHist > 500) {
@@ -435,7 +532,10 @@ export function useDMS({ videoRef, canvasRef, settings }) {
   fireEventRef.current = fireEvent
 
   const calibrate = useCallback(() => {
-    calRef.current = { yaw: 0, pitch: 0, roll: 0, ...lastPoseRef.current }
+    calRef.current = { yaw: 0, pitch: 0, roll: 0, ...lastPoseRef.current, saved: true }
+    try {
+      localStorage.setItem(CAL_KEY, JSON.stringify(calRef.current))
+    } catch {}
   }, [])
 
   const testAlert = useCallback(() => fireEvent('phone', metrics.awareness), [fireEvent, metrics.awareness])

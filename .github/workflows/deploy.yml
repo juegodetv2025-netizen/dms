@@ -25,6 +25,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx vite build
+        env:
+          # Activar licencias: definir estas variables en GitHub > Settings > Secrets and variables > Actions > Variables
+          VITE_REQUIRE_LICENSE: ${{ vars.REQUIRE_LICENSE }}
+          VITE_API_BASE: ${{ vars.API_BASE }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

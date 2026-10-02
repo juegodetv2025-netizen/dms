@@ -2,8 +2,10 @@ import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import nodemailer from 'nodemailer'
+import { activate, requireDevice, licenseConfigured, LicenseError } from './license.js'
 
 const app = express()
+app.set('trust proxy', 1)
 app.use(cors())
 app.use(express.json({ limit: '10mb' }))
 
@@ -19,7 +21,31 @@ const transporter = configured
 
 app.get('/api/status', (_req, res) => res.json({ emailConfigured: configured }))
 
-app.post('/api/alert', async (req, res) => {
+// Freno simple contra fuerza bruta de códigos: 10 intentos / 15 min por IP.
+const attempts = new Map()
+function activateLimiter(req, res, next) {
+  const now = Date.now()
+  const hits = (attempts.get(req.ip) || []).filter((t) => now - t < 15 * 60_000)
+  if (hits.length >= 10) return res.status(429).json({ ok: false, reason: 'rate', error: 'Demasiados intentos, espera unos minutos' })
+  attempts.set(req.ip, [...hits, now])
+  next()
+}
+
+app.post('/api/activate', activateLimiter, async (req, res) => {
+  try {
+    res.json({ ok: true, ...(await activate(req.body?.code, req.headers['user-agent'])) })
+  } catch (e) {
+    if (e instanceof LicenseError) return res.status(e.status).json({ ok: false, reason: e.reason, error: e.message })
+    console.error(e)
+    res.status(500).json({ ok: false, reason: 'error', error: 'Error al activar' })
+  }
+})
+
+app.get('/api/license/check', requireDevice, (req, res) =>
+  res.json({ ok: true, customer: req.customer.name, label: req.device.label, expiresAt: req.customer.expires_at })
+)
+
+app.post('/api/alert', requireDevice, async (req, res) => {
   const { to, type, label, driver, vehicle, image, time, location, metrics } = req.body || {}
   if (!to || !image) return res.status(400).json({ error: 'Faltan destinatario o imagen' })
   if (!transporter) return res.status(503).json({ error: 'SMTP no configurado (.env)' })
@@ -53,5 +79,5 @@ app.post('/api/alert', async (req, res) => {
 })
 
 app.listen(process.env.PORT || 3001, () =>
-  console.log(`Servidor de alertas en :${process.env.PORT || 3001} (SMTP ${configured ? 'OK' : 'NO configurado'})`)
+  console.log(`Servidor de alertas en :${process.env.PORT || 3001} (SMTP ${configured ? 'OK' : 'NO configurado'}, licencias ${licenseConfigured ? 'OK' : 'NO configuradas'})`)
 )

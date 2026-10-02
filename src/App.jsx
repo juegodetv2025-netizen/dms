@@ -25,7 +25,8 @@ const DEFAULTS = {
   sound: true,
   drowsySec: 1.5,
   distractionSec: 2.5,
-  yawDeg: 25,
+  yawDeg: 45,
+  sideCam: true,
   tiltDeg: 20,
   tiltSec: 2,
   copilot: true,
@@ -130,6 +131,7 @@ const mailTxt = { sending: 'Enviando…', sent: 'Notificado ✓', queued: 'En co
 export default function App() {
   const [s, set] = useSettings()
   const [showCfg, setShowCfg] = useState(false)
+  const [camAR, setCamAR] = useState('4 / 3')
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const dms = useDMS({ videoRef, canvasRef, settings: s })
@@ -255,7 +257,7 @@ export default function App() {
               </label>
               <label>
                 Ángulo de giro: {s.yawDeg}°
-                <input type="range" min="10" max="50" step="1" value={s.yawDeg} onChange={(e) => set('yawDeg', +e.target.value)} />
+                <input type="range" min="10" max="90" step="1" value={s.yawDeg} onChange={(e) => set('yawDeg', +e.target.value)} />
               </label>
               <label>
                 Cabeza inclinada: {s.tiltDeg}° durante {s.tiltSec}s
@@ -281,6 +283,10 @@ export default function App() {
               <label>
                 Avisar a coordinación al llegar a: {s.dataWarnPct}%
                 <input type="range" min="50" max="95" step="5" value={s.dataWarnPct} onChange={(e) => set('dataWarnPct', +e.target.value)} />
+              </label>
+              <label className="chk">
+                <input type="checkbox" checked={s.sideCam} onChange={(e) => set('sideCam', e.target.checked)} />
+                Cámara lateral: celular a 45° o más / casi de perfil (umbrales holgados y calibración automática)
               </label>
               <label className="chk consent">
                 <input type="checkbox" checked={s.liveEnabled} onChange={(e) => set('liveEnabled', e.target.checked)} />
@@ -328,11 +334,20 @@ export default function App() {
         <section className="left">
           <motion.div
             className="cam"
+            style={{ aspectRatio: camAR }}
             animate={{
               boxShadow: top ? `0 0 0 3px ${ALERTS[top].color}, 0 0 40px ${ALERTS[top].color}88` : '0 0 0 1px #1e293b',
             }}
           >
-            <video ref={videoRef} playsInline muted />
+            <video
+              ref={videoRef}
+              playsInline
+              muted
+              onLoadedMetadata={(e) => {
+                const { videoWidth: w, videoHeight: h } = e.currentTarget
+                if (w && h) setCamAR(`${w} / ${h}`)
+              }}
+            />
             <canvas ref={canvasRef} />
             {!running && (
               <div className="ph">
@@ -368,8 +383,9 @@ export default function App() {
             <Chip on={flags.eyesClosed} label="Ojos cerrados" color={ALERTS.drowsy.color} />
             <Chip on={flags.away} label="Mirada desviada" color={ALERTS.distraction.color} />
             <Chip on={flags.tilt} label="Cabeza inclinada" color={ALERTS.tilt.color} />
-            <Chip on={flags.phone} label="Celular" color={ALERTS.phone.color} />
+            <Chip on={flags.phone} label="Celular / dispositivo" color={ALERTS.phone.color} />
             <Chip on={flags.noface} label="Sin rostro" color={ALERTS.noface.color} />
+            <Chip on={flags.calibrating} label="Calibrando: mira al frente 3 s" color="#38bdf8" />
           </div>
           {(copilot.last || copilot.error || copilot.listening) && (
             <div className="copilot">

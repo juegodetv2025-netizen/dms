@@ -21,8 +21,8 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .cfg input[type=email],.cfg input:not([type]){background:#0a1120;border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--tx)}
 main{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(320px,1fr);gap:16px}
 @media(max-width:900px){main{grid-template-columns:1fr}}
-.cam{position:relative;aspect-ratio:16/9;background:#000;border-radius:16px;overflow:hidden}
-.cam video,.cam canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.cam{position:relative;aspect-ratio:4/3;max-height:78vh;width:100%;margin:0 auto;background:#000;border-radius:16px;overflow:hidden}
+.cam video,.cam canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
 .ph{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:24px;color:var(--mut);background:#050810}
 .scan{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#3b82f6,transparent);animation:scan 2.6s linear infinite}
 @keyframes scan{from{top:0}to{top:100%}}
